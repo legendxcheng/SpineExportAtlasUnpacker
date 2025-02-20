@@ -77,10 +77,10 @@ class AtlasSplitter:
             return placeholder, region_data
         
     def create_combined_atlas(self, region_names: List[str]) -> Tuple[Image.Image, List[Dict]]:
-        """Create a new atlas combining multiple regions"""
+        """Create a new atlas combining multiple regions using rectangle packing algorithm"""
         regions = []
         max_width = 0
-        total_height = 0
+        total_area = 0
         padding = 2  # Add some padding between regions
         
         # First pass: extract all regions and calculate dimensions
@@ -89,7 +89,7 @@ class AtlasSplitter:
                 region_image, region_data = self.extract_region(region_name)
                 regions.append((region_image, region_data))
                 max_width = max(max_width, region_image.width)
-                total_height += region_image.height + padding
+                total_area += (region_image.width + padding) * (region_image.height + padding)
             except ValueError as e:
                 print(f"Warning: {str(e)}")
                 continue
@@ -97,36 +97,61 @@ class AtlasSplitter:
         if not regions:
             raise ValueError("No valid regions to combine")
             
-        # Ensure reasonable dimensions
-        max_width = min(max_width, 4096)  # Limit maximum width
-        total_height = min(total_height, 4096)  # Limit maximum height
-            
+        # Sort regions by height in descending order (helps with packing efficiency)
+        regions.sort(key=lambda x: x[0].height, reverse=True)
+        
+        # Calculate initial dimensions
+        # Start with a square that can fit all regions (with some padding)
+        initial_size = int((total_area * 1.1) ** 0.5)  # Add 10% for padding
+        atlas_width = min(max(initial_size, max_width), 4096)  # Limit maximum width
+        atlas_height = min(initial_size, 4096)  # Limit maximum height
+        
+        # Create new atlas image
+        combined_image = Image.new('RGBA', (atlas_width, atlas_height), (0, 0, 0, 0))
+        
+        class Node:
+            def __init__(self, x: int, y: int, width: int, height: int):
+                self.x = x
+                self.y = y
+                self.width = width
+                self.height = height
+                self.used = False
+                self.right = None
+                self.down = None
+                
+            def find_node(self, width: int, height: int) -> Optional['Node']:
+                if self.used:
+                    return (self.right.find_node(width, height) or 
+                           self.down.find_node(width, height))
+                elif width <= self.width and height <= self.height:
+                    return self
+                return None
+                
+            def split(self, width: int, height: int) -> None:
+                self.used = True
+                self.down = Node(self.x, self.y + height + padding, 
+                               self.width, self.height - height - padding)
+                self.right = Node(self.x + width + padding, self.y,
+                                self.width - width - padding, height)
+        
+        # Initialize the packing algorithm
+        root = Node(0, 0, atlas_width, atlas_height)
+        region_positions = []
+        
         try:
-            # Create new atlas image
-            combined_image = Image.new('RGBA', (max_width, total_height), (0, 0, 0, 0))
-            
-            # Second pass: place regions in the new atlas
-            y_offset = 0
-            region_positions = []
-            
+            # Second pass: pack regions into the atlas
             for region_image, region_data in regions:
-                try:
-                    # Center the region horizontally if smaller than max_width
-                    x_offset = (max_width - region_image.width) // 2
-                    
-                    # Ensure we don't exceed image bounds
-                    if y_offset + region_image.height > total_height:
-                        print(f"Warning: Region {region_data['name']} exceeds atlas height, skipping")
-                        continue
-                        
-                    # Paste the region
-                    combined_image.paste(region_image, (x_offset, y_offset))
+                node = root.find_node(region_image.width, region_image.height)
+                
+                if node:
+                    # Place the region
+                    combined_image.paste(region_image, (node.x, node.y))
                     
                     # Store position data
                     position_data = {
                         'name': region_data['name'],
-                        'x': x_offset,
-                        'y': y_offset,
+                        'x': node.x,
+                        'y': node.y,
                         'width': region_image.width,
                         'height': region_image.height,
                         'orig': region_data['orig'],
@@ -136,11 +161,17 @@ class AtlasSplitter:
                     }
                     region_positions.append(position_data)
                     
-                    y_offset += region_image.height + padding
-                except Exception as e:
-                    print(f"Error placing region {region_data['name']}: {str(e)}")
-                    continue
+                    # Split the node for future use
+                    node.split(region_image.width, region_image.height)
+                else:
+                    print(f"Warning: Could not fit region {region_data['name']} in atlas")
                     
+            # Trim unused space
+            if region_positions:
+                max_x = max(pos['x'] + pos['width'] for pos in region_positions)
+                max_y = max(pos['y'] + pos['height'] for pos in region_positions)
+                combined_image = combined_image.crop((0, 0, max_x + padding, max_y + padding))
+                
             return combined_image, region_positions
         except Exception as e:
             print(f"Error creating combined atlas: {str(e)}")
