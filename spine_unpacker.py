@@ -8,6 +8,9 @@ import shutil
 from atlas_parser import AtlasParser
 from atlas_splitter import AtlasSplitter
 
+# Default spine file name
+spine_name = 'bz.json'
+
 class SpineAtlasUnpacker:
     def __init__(self, spine_file: str, output_dir: str):
         """
@@ -101,7 +104,7 @@ class SpineAtlasUnpacker:
                 # Create a single atlas for all skins
                 try:
                     # Generate new atlas image and data
-                    new_atlas_name = "combined_atlas"
+                    new_atlas_name = os.path.splitext(spine_name)[0]  # Get name without extension
                     new_atlas_path = os.path.join(self.output_dir, f"{new_atlas_name}.png")
                     new_atlas_data_path = os.path.join(self.output_dir, f"{new_atlas_name}.atlas")
                     
@@ -154,8 +157,8 @@ def main():
     parser.add_argument(
         'spine_file',
         nargs='?',  # Make the argument optional
-        default='./propArrive/bz.json',  # Default spine file path
-        help='Path to the Spine animation file (default: ./propArrive/bz.json)'
+        default=f'./propArrive/{spine_name}',  # Default spine file path
+        help=f'Path to the Spine animation file (default: ./propArrive/{spine_name})'
     )
     parser.add_argument(
         'output_dir',
