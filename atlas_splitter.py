@@ -59,16 +59,15 @@ class AtlasSplitter:
             if region.rotate:
                 region_image = region_image.transpose(Image.ROTATE_90)
                 print(f"Rotated region: {region_name} ({region_image.width}x{region_image.height})")
-                
+            
             region_data = {
                 'name': region.name,
-                'page': page.name,
                 'orig': region.orig,
                 'offset': region.offset,
                 'rotate': region.rotate,
                 'index': region.index
             }
-                
+            
             return region_image, region_data
         except Exception as e:
             print(f"Error extracting region {region_name}: {str(e)}")
@@ -195,23 +194,43 @@ class AtlasSplitter:
         
     def save_combined_atlas_data(self, atlas_path: str, image_name: str, region_positions: List[Dict]) -> None:
         """Save the atlas data file for the combined atlas"""
+        # Get the actual image dimensions
+        image_path = os.path.join(os.path.dirname(atlas_path), image_name)
+        with Image.open(image_path) as img:
+            actual_width, actual_height = img.size
+            
+        # Write atlas header
         with open(atlas_path, 'w', encoding='utf-8') as f:
-            # Write atlas header
             f.write(f"{image_name}\n")
-            f.write("size: 2048,2048\n")  # Default size, adjust if needed
+            f.write(f"size: {actual_width},{actual_height}\n")
             f.write("format: RGBA8888\n")
             f.write("filter: Linear,Linear\n")
-            f.write("repeat: none\n\n")
+            f.write("repeat: none\n")
             
-            # Write region data
-            for region in region_positions:
-                f.write(f"{region['name']}\n")
-                f.write(f"  rotate: {str(region['rotate']).lower()}\n")
-                f.write(f"  xy: {region['x']}, {region['y']}\n")
-                f.write(f"  size: {region['width']}, {region['height']}\n")
-                f.write(f"  orig: {region['orig'][0]}, {region['orig'][1]}\n")
-                f.write(f"  offset: {region['offset'][0]}, {region['offset'][1]}\n")
-                f.write(f"  index: {region['index']}\n\n")
+            # Create a map of the new positions
+            region_map = {pos['name']: pos for pos in region_positions}
+            
+            # Write all regions in the original order, preserving those not in the new atlas
+            for page in self.atlas_parser.pages:
+                for region in page.regions:
+                    f.write(f"{region.name}\n")
+                    if region.name in region_map:
+                        # Use new position data
+                        pos = region_map[region.name]
+                        f.write(f"  rotate: {str(pos['rotate']).lower()}\n")
+                        f.write(f"  xy: {pos['x']}, {pos['y']}\n")
+                        f.write(f"  size: {pos['width']}, {pos['height']}\n")
+                        f.write(f"  orig: {pos['orig'][0]}, {pos['orig'][1]}\n")
+                        f.write(f"  offset: {pos['offset'][0]}, {pos['offset'][1]}\n")
+                        f.write(f"  index: {pos['index']}\n")
+                    else:
+                        # Keep original data for regions not in the new atlas
+                        f.write(f"  rotate: {str(region.rotate).lower()}\n")
+                        f.write(f"  xy: {region.xy[0]}, {region.xy[1]}\n")
+                        f.write(f"  size: {region.size[0]}, {region.size[1]}\n")
+                        f.write(f"  orig: {region.orig[0]}, {region.orig[1]}\n")
+                        f.write(f"  offset: {region.offset[0]}, {region.offset[1]}\n")
+                        f.write(f"  index: {region.index}\n")
         
     def close(self) -> None:
         """Close all opened images"""
