@@ -52,7 +52,7 @@ class SpineAtlasUnpacker:
         splitter.load_page_images(atlas_dir)
         
         try:
-            # Process each skin in the Spine data
+            # Process all skins in the Spine data
             if 'skins' in self.spine_data:
                 skins_data = self.spine_data['skins']
                 
@@ -65,10 +65,10 @@ class SpineAtlasUnpacker:
                     skins_to_process = [(skin.get('name', f'skin_{i}'), skin.get('attachments', {})) 
                                       for i, skin in enumerate(skins_data)]
                 
+                # Collect all unique regions from all skins
+                all_regions = set()
                 for skin_name, skin_data in skins_to_process:
-                    print(f"Processing skin: {skin_name}")
-                    skin_dir = os.path.join(self.output_dir, skin_name)
-                    os.makedirs(skin_dir, exist_ok=True)
+                    print(f"Collecting regions from skin: {skin_name}")
                     
                     # Get all attachments for this skin
                     if isinstance(skin_data, dict):
@@ -79,45 +79,53 @@ class SpineAtlasUnpacker:
                         continue
 
                     # Extract all required regions from the atlas
-                    regions_to_extract = []
                     for attachment in attachments:
-                        for attachment_name in attachment:
-                            if isinstance(attachment[attachment_name], dict):
-                                if not attachment_name in regions_to_extract:
-                                    regions_to_extract.append(attachment_name)
-                    
-                    if not regions_to_extract:
-                        print(f"Warning: No valid regions found in skin {skin_name}")
-                        continue
+                        for attachment_name, attachment_data in attachment.items():
+                            if isinstance(attachment_data, dict):
+                                # Skip clipping regions
+                                if attachment_data.get('type') == 'clipping':
+                                    continue
+                                # If the attachment has a name field, use that as the region name
+                                region_name = attachment_data.get('name', attachment_name)
+                                if not region_name in all_regions:
+                                    all_regions.add(region_name)
+                                    print(f"Added region: {region_name}")
+                
+                if not all_regions:
+                    print("Warning: No valid regions found in any skin")
+                    return
 
-                    # Create a new atlas for this skin
-                    try:
-                        # Generate new atlas image and data
-                        new_atlas_name = f"{skin_name}_atlas"
-                        new_atlas_path = os.path.join(skin_dir, f"{new_atlas_name}.png")
-                        new_atlas_data_path = os.path.join(skin_dir, f"{new_atlas_name}.atlas")
-                        
-                        # Extract and combine regions into new atlas
-                        combined_image, region_positions = splitter.create_combined_atlas(regions_to_extract)
-                        combined_image.save(new_atlas_path)
-                        
-                        # Create and save new atlas data file
-                        splitter.save_combined_atlas_data(
-                            new_atlas_data_path,
-                            new_atlas_name + ".png",
-                            region_positions
-                        )
-                        
-                        # Update references in spine data
-                        # for attachment in attachments:
-                        #     if isinstance(attachment, dict) and 'name' in attachment:
-                        #         attachment['atlas'] = f"{new_atlas_name}.atlas"
-                                
-                        print(f"Created new atlas for skin {skin_name}")
-                        
-                    except Exception as e:
-                        print(f"Error processing skin {skin_name}: {str(e)}")
-                        continue
+                print(f"Total regions to process: {len(all_regions)}")
+                print(f"Regions: {sorted(list(all_regions))}")
+
+                # Create a single atlas for all skins
+                try:
+                    # Generate new atlas image and data
+                    new_atlas_name = "combined_atlas"
+                    new_atlas_path = os.path.join(self.output_dir, f"{new_atlas_name}.png")
+                    new_atlas_data_path = os.path.join(self.output_dir, f"{new_atlas_name}.atlas")
+                    
+                    # Extract and combine regions into new atlas
+                    combined_image, region_positions = splitter.create_combined_atlas(list(all_regions))
+                    combined_image.save(new_atlas_path)
+                    
+                    print(f"Region positions data:")
+                    for pos in region_positions:
+                        print(f"  {pos['name']}: xy=({pos['x']}, {pos['y']}), size=({pos['width']}, {pos['height']})")
+                    
+                    # Create and save new atlas data file
+                    splitter.save_combined_atlas_data(
+                        new_atlas_data_path,
+                        new_atlas_name + ".png",
+                        region_positions
+                    )
+                    
+                    print(f"Created combined atlas with {len(region_positions)} regions")
+                    
+                except Exception as e:
+                    print(f"Error creating combined atlas: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
                         
         finally:
             # Clean up
@@ -146,8 +154,8 @@ def main():
     parser.add_argument(
         'spine_file',
         nargs='?',  # Make the argument optional
-        default='./propArrive/bubble_hxc.json',  # Default spine file path
-        help='Path to the Spine animation file (default: ./propArrive/bubble_hxc.json)'
+        default='./propArrive/bz.json',  # Default spine file path
+        help='Path to the Spine animation file (default: ./propArrive/bz.json)'
     )
     parser.add_argument(
         'output_dir',

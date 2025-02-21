@@ -80,6 +80,7 @@ class AtlasSplitter:
         """Create a new atlas combining multiple regions using rectangle packing algorithm"""
         regions = []
         max_width = 0
+        max_height = 0
         total_area = 0
         padding = 2  # Add some padding between regions
         
@@ -89,6 +90,7 @@ class AtlasSplitter:
                 region_image, region_data = self.extract_region(region_name)
                 regions.append((region_image, region_data))
                 max_width = max(max_width, region_image.width)
+                max_height = max(max_height, region_image.height)
                 total_area += (region_image.width + padding) * (region_image.height + padding)
             except ValueError as e:
                 print(f"Warning: {str(e)}")
@@ -98,13 +100,13 @@ class AtlasSplitter:
             raise ValueError("No valid regions to combine")
             
         # Sort regions by height in descending order (helps with packing efficiency)
-        regions.sort(key=lambda x: x[0].height, reverse=True)
+        regions.sort(key=lambda x: max(x[0].width, x[0].height), reverse=True)
         
         # Calculate initial dimensions
-        # Start with a square that can fit all regions (with some padding)
-        initial_size = int((total_area * 1.1) ** 0.5)  # Add 10% for padding
-        atlas_width = min(max(initial_size, max_width), 4096)  # Limit maximum width
-        atlas_height = min(initial_size, 4096)  # Limit maximum height
+        # Start with dimensions that can fit all regions (with some padding)
+        initial_size = int((total_area * 1.2) ** 0.5)  # Add 20% for better packing
+        atlas_width = max(initial_size, max_width + padding)
+        atlas_height = max(initial_size, max_height + padding)
         
         # Create new atlas image
         combined_image = Image.new('RGBA', (atlas_width, atlas_height), (0, 0, 0, 0))
@@ -125,6 +127,9 @@ class AtlasSplitter:
                            self.down.find_node(width, height))
                 elif width <= self.width and height <= self.height:
                     return self
+                # Try rotating the region if it doesn't fit
+                elif height <= self.width and width <= self.height:
+                    return self
                 return None
                 
             def split(self, width: int, height: int) -> None:
@@ -141,7 +146,16 @@ class AtlasSplitter:
         try:
             # Second pass: pack regions into the atlas
             for region_image, region_data in regions:
+                # Try both orientations
                 node = root.find_node(region_image.width, region_image.height)
+                rotated = False
+                
+                if not node:
+                    # Try rotating the region
+                    node = root.find_node(region_image.height, region_image.width)
+                    if node:
+                        rotated = True
+                        region_image = region_image.transpose(Image.ROTATE_90)
                 
                 if node:
                     # Place the region
@@ -156,7 +170,7 @@ class AtlasSplitter:
                         'height': region_image.height,
                         'orig': region_data['orig'],
                         'offset': region_data['offset'],
-                        'rotate': region_data['rotate'],
+                        'rotate': rotated,
                         'index': region_data['index']
                     }
                     region_positions.append(position_data)
