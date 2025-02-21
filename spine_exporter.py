@@ -15,7 +15,7 @@ class SpineExporter:
         self.cur_spine_proj_dir = "curSpineProj"
         self.empty_spine_proj_dir = "emptySpineProj"
         self.output_dir = "output"
-        self.textures_dir = os.path.join(self.cur_spine_proj_dir, "images")
+        self.textures_dir = None  # Will be set per JSON file
 
     def clean_cur_spine_proj(self):
         """清空curSpineProj目录并复制空项目文件"""
@@ -123,6 +123,36 @@ class SpineExporter:
         except Exception as e:
             raise Exception(f"Failed to export Spine project: {str(e)}")
 
+    def preprocess_json(self, json_file):
+        """预处理JSON文件，规范化images路径"""
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                
+            # 检查并修正 images 路径
+            images_path = data.get('skeleton', {}).get('images', './images/')
+            if os.path.isabs(images_path):  # 如果是绝对路径
+                data['skeleton']['images'] = './images/'
+                # 写回文件
+                with open(json_file, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                print(f"已将 {json_file} 中的绝对路径改为相对路径 './images/'")
+            
+            return data
+        except Exception as e:
+            raise Exception(f"Error preprocessing JSON file {json_file}: {str(e)}")
+
+    def get_textures_dir_from_json(self, json_file):
+        """从JSON文件中读取纹理目录路径"""
+        try:
+            data = self.preprocess_json(json_file)
+            images_path = data.get('skeleton', {}).get('images', './images/')
+            # 将路径转换为相对于JSON文件的绝对路径
+            json_dir = os.path.dirname(json_file)
+            return os.path.normpath(os.path.join(json_dir, images_path))
+        except Exception as e:
+            raise Exception(f"Error reading textures directory from JSON {json_file}: {str(e)}")
+
     def process_json_file(self, json_file):
         """处理单个JSON文件"""
         print(f"Processing {json_file}...")
@@ -136,6 +166,10 @@ class SpineExporter:
         
         if not os.path.exists(atlas_file):
             raise FileNotFoundError(f"Atlas file not found: {atlas_file}")
+
+        # 从JSON文件获取纹理目录路径并设置目标纹理目录
+        source_textures_dir = self.get_textures_dir_from_json(json_file)
+        self.textures_dir = os.path.join(self.cur_spine_proj_dir, os.path.basename(source_textures_dir))
         
         # 执行处理步骤
         self.unpack_texture(json_dir, atlas_file)
