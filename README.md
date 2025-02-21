@@ -1,43 +1,39 @@
-# Spine Export Atlas Unpacker
+1. 输入文件夹路径，遍历文件夹中的所有.json文件：
+    a. 如果当前工作目录下存在curSpineProj目录，则清空它内部所有文件。
+    b. 复制./emptySpineProj目录下的proj.spine到curSpineProj目录下。
+    c. 对于这个.json文件，找到同名的.atlas文件，打开它，读取第一行，找到.png文件的名称，记录其绝对路径。
+    e. 执行命令行：（指定版本 3.8）
+        i. 进行纹理解包： 上一步中获得的绝对路径 ，让spine （指定版本4.2）进行解包，解包后放到curSpineProj目录的textures目录下。
+        ii. 导入spine数据
+        iii. 导入spine图片
+        iv. 导出到output目录下
 
-A Python tool for modifying Spine animation resources to ensure each animation uses its own texture atlas.
+2. spine的指令为：
+    切换版本：
+        切换到3.8版本：
+            spine -u 3.8
+        切换到4.2版本：
+            spine -u 4.2
 
-## Features
+    导入spine的json数据：
+        Spine -i <.json文件路径> -o <上面提到的 .curSpineProj/proj.spine> --import
+    
+    spine的纹理解包：
+        Spine -i <上面描述的.json所在的文件夹路径> -o <./curSpineProj/textures> --unpack <上面描述的.atlas文件第一行的png文件的绝对路径>
+        纹理图集解包:
+        -i, --input 图集图片文件夹的路径。
+        -o, --output 写入解包图片文件的路径。
+        -c, --unpack 纹理图集文件的路径。
 
-- Processes Spine animation files (.json/.skel)
-- Extracts and separates texture atlases for each animation
-- Modifies animation files to reference their individual atlases
-- Maintains animation quality and integrity
+    spine的导出：
+        Spine -i <./curSpineProj/proj.spine> -m -o <./output> -e json[+pack]
+        导出JSON、二进制、图片或视频:
+        -i, --input   文件夹、项目或数据文件的路径。覆盖导出JSON。
+        -m, --clean   在导出之前执行动画清理。
+        -o, --output  写入导出文件的路径。覆盖导出JSON。
+        -e, --export  导出设置JSON文件的路径。
 
-## Requirements
 
-- Python 3.8+
-- Pillow (PIL)
-- json
 
-## Installation
 
-1. Clone this repository:
-```bash
-git clone https://github.com/yourusername/SpineExportAtlasUnpacker.git
-cd SpineExportAtlasUnpacker
-```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-## Usage
-
-```bash
-python spine_unpacker.py <input_spine_file> <output_directory>
-```
-
-## License
-
-MIT License
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
