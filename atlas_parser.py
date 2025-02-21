@@ -53,6 +53,7 @@ class AtlasParser:
             
         i = 0
         parsing_page_properties = False
+        current_region = None
         
         while i < len(lines):
             line = lines[i]
@@ -61,13 +62,18 @@ class AtlasParser:
             
             # Skip empty lines
             if not line_stripped:
-                parsing_page_properties = False
                 i += 1
                 continue
                 
             # New page starts with a non-indented line that ends with .png
             if not line.startswith(' ') and line_stripped.endswith('.png'):
                 print(f"Found page: {line}")
+                # If we have a current region, add it to the current page before creating a new one
+                if current_region is not None and self._current_page is not None:
+                    print(f"Adding region before new page: {current_region.name}")
+                    self._current_page.regions.append(current_region)
+                    current_region = None
+                
                 self._current_page = AtlasPage(line_stripped)
                 self.pages.append(self._current_page)
                 parsing_page_properties = True  # Start parsing page properties
@@ -81,21 +87,58 @@ class AtlasParser:
                 i += 1
                 continue
                     
-            # Parse region (only if we're not parsing page properties and line doesn't contain ':')
-            if self._current_page is not None and not parsing_page_properties and not ':' in line_stripped and not line.startswith(' '):
-                print(f"Found region: {line}")
-                next_i = self._parse_region_property(lines, i)
-                if next_i <= i:  # 防止索引没有前进
-                    i += 1
-                else:
-                    i = next_i + 1  # 跳过已处理的行
-                continue
-                
-            # If we get here with a non-indented line, stop parsing page properties
+            # If we get here with a non-indented line that's not a property, 
+            # it might be a region name
             if not line.startswith(' '):
                 parsing_page_properties = False
-                
+                # If it's not a property line (no colon), treat it as a region name
+                if ':' not in line_stripped:
+                    # If we have a current region, add it to the current page before creating a new one
+                    if current_region is not None and self._current_page is not None:
+                        print(f"Adding region: {current_region.name}")
+                        self._current_page.regions.append(current_region)
+                    
+                    print(f"Found region: {line}")
+                    current_region = AtlasRegion(
+                        name=line_stripped,
+                        xy=(0, 0),
+                        size=(0, 0),
+                        orig=(0, 0),
+                        offset=(0, 0),
+                        rotate=False,
+                        index=-1
+                    )
+            # If we're in an indented section and have a current region, parse its properties
+            elif line.startswith('  ') and current_region is not None and ':' in line_stripped:
+                try:
+                    key, value = [x.strip() for x in line_stripped.split(':', 1)]
+                    print(f"  Processing region property: {key} = {value}")
+                    
+                    if key == 'rotate':
+                        current_region.rotate = value.lower() == 'true'
+                    elif key == 'xy':
+                        x, y = map(int, value.replace(' ', '').split(','))
+                        current_region.xy = (x, y)
+                    elif key == 'size':
+                        w, h = map(int, value.replace(' ', '').split(','))
+                        current_region.size = (w, h)
+                    elif key == 'orig':
+                        w, h = map(int, value.replace(' ', '').split(','))
+                        current_region.orig = (w, h)
+                    elif key == 'offset':
+                        x, y = map(int, value.replace(' ', '').split(','))
+                        current_region.offset = (x, y)
+                    elif key == 'index':
+                        current_region.index = int(value)
+                except Exception as e:
+                    print(f"Warning: Failed to parse property in line '{line}': {str(e)}")
+            
             i += 1
+            
+        # Don't forget to add the last region if we have one
+        if current_region is not None and self._current_page is not None:
+            print(f"Adding final region: {current_region.name}")
+            self._current_page.regions.append(current_region)
             
         print(f"Parsed {len(self.pages)} pages with {sum(len(page.regions) for page in self.pages)} regions")
         self.validate_parsing()
@@ -125,88 +168,6 @@ class AtlasParser:
             print(f"Warning: Failed to parse page property {key}: {str(e)}")
             
         return i
-        
-    def _parse_region_property(self, lines: List[str], i: int) -> int:
-        """Parse a region and its properties"""
-        line = lines[i]
-        line_stripped = line.strip()
-        if ':' in line_stripped:  # Skip lines that look like properties
-            return i
-            
-        print(f"\nParsing properties for region: {line_stripped}")
-        
-        # Initialize region with default values
-        region = AtlasRegion(
-            name=line_stripped,
-            xy=(0, 0),
-            size=(0, 0),
-            orig=(0, 0),
-            offset=(0, 0),
-            rotate=False,
-            index=-1
-        )
-        
-        # Parse region properties
-        next_line = i + 1
-        properties_found = False  # Track if we found any properties
-        
-        while next_line < len(lines):
-            line = lines[next_line]
-            line_stripped = line.strip()
-            
-            # End of region properties when we hit a non-empty line without indentation
-            if line_stripped and not line.startswith('  '):
-                break
-                
-            # Process property lines (they should be indented and contain ':')
-            if line.startswith('  ') and ':' in line_stripped:
-                print(f"  Processing line: {line}")
-                try:
-                    # Split the line into key and value, handling extra spaces
-                    parts = line_stripped.split(':', 1)
-                    if len(parts) == 2:
-                        key = parts[0].strip()
-                        value = parts[1].strip()
-                        properties_found = True  # Mark that we found at least one property
-                        
-                        if key == 'rotate':
-                            region.rotate = value.lower() == 'true'
-                            print(f"    Set rotate: {region.rotate}")
-                        elif key == 'xy':
-                            x, y = map(int, value.replace(' ', '').split(','))
-                            region.xy = (x, y)
-                            print(f"    Set xy: {region.xy}")
-                        elif key == 'size':
-                            w, h = map(int, value.replace(' ', '').split(','))
-                            region.size = (w, h)
-                            print(f"    Set size: {region.size}")
-                        elif key == 'orig':
-                            w, h = map(int, value.replace(' ', '').split(','))
-                            region.orig = (w, h)
-                            print(f"    Set orig: {region.orig}")
-                        elif key == 'offset':
-                            x, y = map(int, value.replace(' ', '').split(','))
-                            region.offset = (x, y)
-                            print(f"    Set offset: {region.offset}")
-                        elif key == 'index':
-                            region.index = int(value)
-                            print(f"    Set index: {region.index}")
-                except Exception as e:
-                    print(f"Warning: Failed to parse property in line '{line}': {str(e)}")
-            
-            next_line += 1
-            
-        if properties_found:
-            print(f"Finished parsing region: {line_stripped} - xy={region.xy}, size={region.size}, "
-                  f"orig={region.orig}, offset={region.offset}, rotate={region.rotate}")
-            if self._current_page is not None:
-                self._current_page.regions.append(region)
-            else:
-                print(f"Warning: No current page to add region {line_stripped} to!")
-        else:
-            print(f"Warning: No properties found for region {line_stripped}")
-            
-        return next_line - 1
         
     def save_atlas(self, output_path: str) -> None:
         """Save the atlas data to a file"""

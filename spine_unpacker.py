@@ -9,7 +9,7 @@ from atlas_parser import AtlasParser
 from atlas_splitter import AtlasSplitter
 
 # Default spine file name
-spine_name = 'bz.json'
+spine_name = 'xingxingdaojubaodian.json'
 
 class SpineAtlasUnpacker:
     def __init__(self, spine_file: str, output_dir: str):
