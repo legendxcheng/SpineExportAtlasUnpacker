@@ -116,25 +116,11 @@ class AtlasSplitter:
         if not regions:
             raise ValueError("No valid regions to combine")
             
-        # Sort regions by height in descending order (helps with packing efficiency)
+        # Sort regions by area and then by max dimension
         regions.sort(key=lambda x: (
             x[0].width * x[0].height,  # First sort by area
             max(x[0].width, x[0].height)  # Then by max dimension
         ), reverse=True)
-        
-        # Calculate initial dimensions
-        # Start with dimensions that can fit all regions (with some padding)
-        initial_size = int((total_area * 1.3) ** 0.5)  # Slightly increase padding to 30%
-        atlas_width = max(initial_size, max_width + padding)
-        atlas_height = max(initial_size, max_height + padding)
-        
-        print(f"\nAtlas dimensions:")
-        print(f"  - Total area of all regions: {total_area}")
-        print(f"  - Initial calculated size: {initial_size}")
-        print(f"  - Final atlas size: {atlas_width}x{atlas_height}")
-        
-        # Create new atlas image
-        combined_image = Image.new('RGBA', (atlas_width, atlas_height), (0, 0, 0, 0))
         
         class Node:
             def __init__(self, x: int, y: int, width: int, height: int):
@@ -164,18 +150,20 @@ class AtlasSplitter:
                 self.right = Node(self.x + width + padding, self.y,
                                 self.width - width - padding, height)
         
-        # Initialize the packing algorithm
-        root = Node(0, 0, atlas_width, atlas_height)
-        region_positions = []
-        
-        try:
-            # Second pass: pack regions into the atlas
+        def try_pack_regions(width: int, height: int) -> Tuple[Optional[Image.Image], List[Dict]]:
+            """Try to pack all regions into an atlas of given size"""
+            print(f"Attempting to pack regions into {width}x{height} atlas...")
+            
+            # Create new atlas image
+            combined_image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+            
+            # Initialize the packing algorithm
+            root = Node(0, 0, width, height)
+            region_positions = []
+            
+            # Try to pack all regions
             for region_image, region_data in regions:
                 region_name = region_data['name']
-                if region_name in ['b_00016', 'b_00017']:
-                    print(f"\nTrying to pack {region_name}:")
-                    print(f"  Region size: {region_image.width}x{region_image.height}")
-                    print(f"  Available atlas space: {atlas_width}x{atlas_height}")
                 
                 # Try both orientations
                 node = root.find_node(region_image.width, region_image.height)
@@ -184,15 +172,11 @@ class AtlasSplitter:
                 if not node:
                     # Try rotating the region
                     node = root.find_node(region_image.height, region_image.width)
-                    if node and region_name in ['b_00016', 'b_00017']:
-                        print(f"  Found space after rotation")
                     if node:
                         rotated = True
                         region_image = region_image.transpose(Image.ROTATE_90)
                 
                 if node:
-                    if region_name in ['b_00016', 'b_00017']:
-                        print(f"  Successfully placed at: ({node.x}, {node.y})")
                     # Place the region
                     combined_image.paste(region_image, (node.x, node.y))
                     
@@ -213,23 +197,50 @@ class AtlasSplitter:
                     # Split the node for future use
                     node.split(region_image.width, region_image.height)
                 else:
-                    if region_name in ['b_00016', 'b_00017']:
-                        print(f"  Failed to find space in both orientations")
-                    print(f"Warning: Could not fit region {region_data['name']} in atlas")
+                    print(f"Could not fit region {region_name} in {width}x{height} atlas")
+                    return None, region_positions
                     
-            # Trim unused space
-            if region_positions:
-                max_x = max(pos['x'] + pos['width'] for pos in region_positions)
-                max_y = max(pos['y'] + pos['height'] for pos in region_positions)
-                combined_image = combined_image.crop((0, 0, max_x + padding, max_y + padding))
-                print(f"\nFinal atlas size after trimming: {max_x + padding}x{max_y + padding}")
-                
             return combined_image, region_positions
-        except Exception as e:
-            print(f"Error creating combined atlas: {str(e)}")
-            # Create a minimal valid image if combination fails
-            fallback_image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
-            return fallback_image, region_positions
+        
+        # Start with initial size calculation
+        scale_factor = 1.2  # Start with 20% extra space
+        max_attempts = 5    # Maximum number of resize attempts
+        attempt = 0
+        
+        while attempt < max_attempts:
+            initial_size = int((total_area * scale_factor) ** 0.5)
+            atlas_width = max(initial_size, max_width + padding)
+            atlas_height = max(initial_size, max_height + padding)
+            
+            print(f"\nAttempt {attempt + 1}:")
+            print(f"  - Scale factor: {scale_factor:.2f}")
+            print(f"  - Atlas size: {atlas_width}x{atlas_height}")
+            
+            # Try to pack with current dimensions
+            combined_image, region_positions = try_pack_regions(atlas_width, atlas_height)
+            
+            if combined_image is not None:
+                # Successfully packed all regions
+                print("Successfully packed all regions!")
+                
+                # Trim unused space
+                if region_positions:
+                    max_x = max(pos['x'] + pos['width'] for pos in region_positions)
+                    max_y = max(pos['y'] + pos['height'] for pos in region_positions)
+                    combined_image = combined_image.crop((0, 0, max_x + padding, max_y + padding))
+                    print(f"Final atlas size after trimming: {max_x + padding}x{max_y + padding}")
+                
+                return combined_image, region_positions
+            
+            # Increase size for next attempt
+            scale_factor += 0.2
+            attempt += 1
+            
+        # If we get here, we failed to pack after all attempts
+        print(f"Failed to pack all regions after {max_attempts} attempts")
+        # Return the best attempt we had (with missing regions)
+        fallback_image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+        return fallback_image, region_positions
         
     def save_combined_atlas_data(self, atlas_path: str, image_name: str, region_positions: List[Dict]) -> None:
         """Save the atlas data file for the combined atlas"""
