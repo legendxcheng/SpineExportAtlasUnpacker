@@ -26,14 +26,23 @@ class AtlasSplitter:
             
     def extract_region(self, region_name: str) -> Tuple[Image.Image, Dict]:
         """Extract a single region from its page image"""
-        print(f"\nExtracting region: {region_name}")
+        # Only log for b_00016 or if there's an error
+        is_target = region_name == "b_00016"
+        if is_target:
+            print(f"\n=== Processing target region: {region_name} ===")
+            
         page, region = self.find_region(region_name)
         if not page or not region:
             raise ValueError(f"Region not found: {region_name}")
             
-        print(f"Found region in page: {page.name}")
-        print(f"Region properties: xy=({region.xy}), size=({region.size}), "
-              f"orig=({region.orig}), offset=({region.offset}), rotate={region.rotate}")
+        if is_target:
+            print(f"Found in page: {page.name}")
+            print(f"Region data:")
+            print(f"  - xy: ({region.xy[0]}, {region.xy[1]})")
+            print(f"  - size: ({region.size[0]}, {region.size[1]})")
+            print(f"  - orig: ({region.orig[0]}, {region.orig[1]})")
+            print(f"  - offset: ({region.offset[0]}, {region.offset[1]})")
+            print(f"  - rotate: {region.rotate}")
             
         source_image = self.images[page.name]
         x, y = region.xy
@@ -48,17 +57,20 @@ class AtlasSplitter:
             y = max(0, min(y, source_image.height - 1))
             width = min(width, source_image.width - x)
             height = min(height, source_image.height - y)
-            print(f"Adjusted coordinates: ({x}, {y}, {width}, {height})")
+            if is_target:
+                print(f"Adjusted coordinates: ({x}, {y}, {width}, {height})")
             
         try:
             # Extract the region
             region_image = source_image.crop((x, y, x + width, y + height))
-            print(f"Successfully extracted region: {region_name} ({region_image.width}x{region_image.height})")
+            if is_target:
+                print(f"Extracted region size: {region_image.width}x{region_image.height}")
             
             # Handle rotation if needed
             if region.rotate:
                 region_image = region_image.transpose(Image.ROTATE_90)
-                print(f"Rotated region: {region_name} ({region_image.width}x{region_image.height})")
+                if is_target:
+                    print(f"After rotation: {region_image.width}x{region_image.height}")
             
             region_data = {
                 'name': region.name,
@@ -67,6 +79,9 @@ class AtlasSplitter:
                 'rotate': region.rotate,
                 'index': region.index
             }
+            
+            if is_target:
+                print("=== Extraction completed successfully ===\n")
             
             return region_image, region_data
         except Exception as e:
@@ -82,6 +97,9 @@ class AtlasSplitter:
         max_height = 0
         total_area = 0
         padding = 2  # Add some padding between regions
+        
+        print("\n=== Atlas Creation Process ===")
+        print(f"Total regions to process: {len(region_names)}")
         
         # First pass: extract all regions and calculate dimensions
         for region_name in region_names:
@@ -99,13 +117,21 @@ class AtlasSplitter:
             raise ValueError("No valid regions to combine")
             
         # Sort regions by height in descending order (helps with packing efficiency)
-        regions.sort(key=lambda x: max(x[0].width, x[0].height), reverse=True)
+        regions.sort(key=lambda x: (
+            x[0].width * x[0].height,  # First sort by area
+            max(x[0].width, x[0].height)  # Then by max dimension
+        ), reverse=True)
         
         # Calculate initial dimensions
         # Start with dimensions that can fit all regions (with some padding)
-        initial_size = int((total_area * 1.2) ** 0.5)  # Add 20% for better packing
+        initial_size = int((total_area * 1.3) ** 0.5)  # Slightly increase padding to 30%
         atlas_width = max(initial_size, max_width + padding)
         atlas_height = max(initial_size, max_height + padding)
+        
+        print(f"\nAtlas dimensions:")
+        print(f"  - Total area of all regions: {total_area}")
+        print(f"  - Initial calculated size: {initial_size}")
+        print(f"  - Final atlas size: {atlas_width}x{atlas_height}")
         
         # Create new atlas image
         combined_image = Image.new('RGBA', (atlas_width, atlas_height), (0, 0, 0, 0))
@@ -145,6 +171,12 @@ class AtlasSplitter:
         try:
             # Second pass: pack regions into the atlas
             for region_image, region_data in regions:
+                region_name = region_data['name']
+                if region_name in ['b_00016', 'b_00017']:
+                    print(f"\nTrying to pack {region_name}:")
+                    print(f"  Region size: {region_image.width}x{region_image.height}")
+                    print(f"  Available atlas space: {atlas_width}x{atlas_height}")
+                
                 # Try both orientations
                 node = root.find_node(region_image.width, region_image.height)
                 rotated = False
@@ -152,11 +184,15 @@ class AtlasSplitter:
                 if not node:
                     # Try rotating the region
                     node = root.find_node(region_image.height, region_image.width)
+                    if node and region_name in ['b_00016', 'b_00017']:
+                        print(f"  Found space after rotation")
                     if node:
                         rotated = True
                         region_image = region_image.transpose(Image.ROTATE_90)
                 
                 if node:
+                    if region_name in ['b_00016', 'b_00017']:
+                        print(f"  Successfully placed at: ({node.x}, {node.y})")
                     # Place the region
                     combined_image.paste(region_image, (node.x, node.y))
                     
@@ -177,6 +213,8 @@ class AtlasSplitter:
                     # Split the node for future use
                     node.split(region_image.width, region_image.height)
                 else:
+                    if region_name in ['b_00016', 'b_00017']:
+                        print(f"  Failed to find space in both orientations")
                     print(f"Warning: Could not fit region {region_data['name']} in atlas")
                     
             # Trim unused space
@@ -184,6 +222,7 @@ class AtlasSplitter:
                 max_x = max(pos['x'] + pos['width'] for pos in region_positions)
                 max_y = max(pos['y'] + pos['height'] for pos in region_positions)
                 combined_image = combined_image.crop((0, 0, max_x + padding, max_y + padding))
+                print(f"\nFinal atlas size after trimming: {max_x + padding}x{max_y + padding}")
                 
             return combined_image, region_positions
         except Exception as e:
