@@ -11,11 +11,12 @@ import sys
 CRACK_SPINE = r"D:\Program Files (x86)\Spine\spine.exe"
 
 class SpineExporter:
-    def __init__(self):
+    def __init__(self, wait_for_texture_edit=False):
         self.cur_spine_proj_dir = "curSpineProj"
         self.empty_spine_proj_dir = "emptySpineProj"
         self.output_dir = "output"
         self.textures_dir = None  # Will be set per JSON file
+        self.wait_for_texture_edit = wait_for_texture_edit
 
     def clean_cur_spine_proj(self):
         """清空curSpineProj目录并复制空项目文件"""
@@ -91,6 +92,16 @@ class SpineExporter:
                 '-o', self.textures_dir,
                 '--unpack', atlas_path
             ], "解包纹理")
+            
+            # 如果需要等待用户编辑纹理
+            if self.wait_for_texture_edit:
+                abs_texture_path = os.path.abspath(self.textures_dir)
+                print("\n" + "="*50)
+                print(f"纹理已解包到: {abs_texture_path}")
+                print("请编辑纹理文件，完成后按回车键继续...")
+                print("="*50 + "\n")
+                input("按回车键继续...")
+                
         except Exception as e:
             raise Exception(f"Failed to unpack texture: {str(e)}")
 
@@ -196,16 +207,20 @@ def main():
     parser.add_argument('--input_dir', '-i', 
                       default='./propArrive',  # 设置默认值为propArrive目录
                       help='要处理的文件夹路径 (默认: ./propArrive)')
+    parser.add_argument('--wait_for_texture_edit', '-w', 
+                      action='store_true',
+                      help='在解包纹理后暂停，等待用户编辑纹理文件')
     
     args = parser.parse_args()
     input_dir = args.input_dir
+    wait_for_texture_edit = args.wait_for_texture_edit
 
     try:
         if not os.path.exists(input_dir):
             print(f"错误：目录 {input_dir} 不存在")
             return
         
-        exporter = SpineExporter()
+        exporter = SpineExporter(wait_for_texture_edit=wait_for_texture_edit)
         exporter.process_directory(input_dir)
         print("处理完成！")
         

@@ -36,11 +36,20 @@
 3. 使用方法：
     1. 分析一个游戏工程中的Spine动画目录（先把这里的output目录清空）
         python spine_exporter.py --input_dir "E:\IAA定制\playablead_bubble_shot\assets\resources\game\spine\win_fail"
-    2. 将Output目录下的所有文件复制到上一步分析的Spine动画目录下
-    3. 打开Cocos，让Cosos更新Meta文件
-    4. 运行脚本更新meta文件
+    
+    2. 如果需要在解包纹理后暂停，以便编辑纹理文件，可以使用 --wait_for_texture_edit 参数：
+        python spine_exporter.py --input_dir "E:\IAA定制\playablead_bubble_shot\assets\resources\game\spine\win_fail" --wait_for_texture_edit
+        
+        或使用简写形式：
+        python spine_exporter.py -i "E:\IAA定制\playablead_bubble_shot\assets\resources\game\spine\win_fail" -w
+        
+        使用此参数后，脚本会在解包纹理后暂停，显示纹理文件的路径，并等待用户编辑完成后按回车键继续处理流程。
+    
+    3. 将Output目录下的所有文件复制到上一步分析的Spine动画目录下
+    4. 打开Cocos，让Cosos更新Meta文件
+    5. 运行脚本更新meta文件
         python correct_spine_json_ref.py "e:\IAA定制\playablead_bubble_shot\assets\resources\game\spine\win_fail"
-    5. 清理掉原来的工程文件夹中的合图
+    6. 清理掉原来的工程文件夹中的合图
 
 
 
